@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Log | Mission History</title>
+    <style>
+        :root {
+            --space-dark: #0b0d17;
+            --earth-blue: #1a73e8;
+            --accent-cyan: #00f2ff;
+            --text-light: #e0e0e0;
+            --row-hover: rgba(52, 152, 219, 0.1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--space-dark);
+            color: var(--text-light);
+            margin: 0;
+            padding: 40px 20px;
+            background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0);
+            background-size: 40px 40px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--accent-cyan);
+            margin: 0;
+        }
+
+        .back-link {
+            text-decoration: none;
+            color: var(--text-light);
+            font-size: 0.9rem;
+            padding: 8px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .back-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent-cyan);
+        }
+
+        /* Table Styling */
+        .table-wrapper {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--accent-cyan);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            padding: 15px;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.9rem;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: var(--row-hover);
+        }
+
+        .timestamp {
+            font-family: 'Courier New', monospace;
+            color: #aaa;
+        }
+
+        .coord {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+
+        .note-cell {
+            font-style: italic;
+            color: #ccc;
+        }
+
+        @media (max-width: 600px) {
+            table { font-size: 0.8rem; }
+            th, td { padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Mission Log</h1>
+            <a href="/" class="back-link">← Return to Radar</a>
+        </header>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time (UTC)</th>
+                        <th>Position (Lat/Lon)</th>
+                        <th>Mission Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td class="timestamp">{{ log.timestamp.strftime('%H:%M:%S | %y-%m-%d') }}</td>
+                        <td class="coord">
+                            <span style="color: #4db8ff;">{{ log.lat }}</span>, 
+                            <span style="color: #4db8ff;">{{ log.lon }}</span>
+                        </td>
+                        <td class="note-cell">{{ log.note }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</body>
+</html>
