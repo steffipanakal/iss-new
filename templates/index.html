@@ -1,158 +1,94 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ISS Orbit Tracker</title>
-    <style>
-        :root {
-            --space-dark: #0b0d17;
-            --earth-blue: #1a73e8;
-            --accent-cyan: #00f2ff;
-            --text-light: #e0e0e0;
-        }
+from flask import Flask, render_template, request, redirect, flash
+from flask_sqlalchemy import SQLAlchemy
+import requests
+from datetime import datetime
 
-        body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background-color: var(--space-dark);
-            color: var(--text-light);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            /* Subtle star background effect */
-            background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0);
-            background-size: 40px 40px;
-        }
+app = Flask(__name__)
+app.secret_key = 'orbital_secret_key' # Required for flashing messages
 
-        .dashboard {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 2.5rem;
-            border-radius: 20px;
-            width: 100%;
-            max-width: 450px;
-            text-align: center;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-        }
+# Setup SQLite database
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///iss_logs.db'
+db = SQLAlchemy(app)
 
-        h1 {
-            font-size: 1.8rem;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            margin-bottom: 1.5rem;
-            color: var(--accent-cyan);
-        }
+# Database Model
+class Snapshot(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    lat = db.Column(db.String(20))
+    lon = db.Column(db.String(20))
+    note = db.Column(db.String(200))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-        .telemetry {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            border-left: 4px solid var(--earth-blue);
-        }
+# Create the database file
+with app.app_context():
+    db.create_all()
 
-        .coordinate-grid {
-            display: flex;
-            justify-content: space-around;
-            font-family: 'Courier New', monospace;
-            font-size: 1.1rem;
-            color: var(--accent-cyan);
-        }
+@app.route('/')
+def index():
+    # Default values to prevent front-end crashes (7.2 Missing Keys)
+    iss_pos = {'latitude': '0.00', 'longitude': '0.00'}
+    astro_count = 'N/A'
+    
+    try:
+        # Fetch ISS Position
+        iss_res = requests.get("http://api.open-notify.org/iss-now.json", timeout=5)
+        # Fetch People in Space
+        astro_res = requests.get("http://api.open-notify.org/astros.json", timeout=5)
 
-        .human-count {
-            font-size: 0.9rem;
-            margin-top: 10px;
-            opacity: 0.8;
-        }
+        # 7.2 API Rate Limiting & Status Check
+        if iss_res.status_code == 200 and astro_res.status_code == 200:
+            iss_data = iss_res.json()
+            astro_data = astro_res.json()
+            
+            # 7.2 Missing Keys Handling
+            iss_pos = iss_data.get('iss_position', iss_pos)
+            astro_count = astro_data.get('number', '0')
+        else:
+            # Fallback to last known position from DB
+            last_log = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
+            if last_log:
+                iss_pos = {'latitude': last_log.lat, 'longitude': last_log.lon}
+            flash("Live telemetry unavailable. Showing last known position.")
 
-        input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            margin: 15px 0;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            color: white;
-            box-sizing: border-box;
-        }
+    except (requests.exceptions.RequestException, KeyError):
+        # 7.2 Connection Errors
+        flash("Live telemetry currently unavailable.")
+        # Attempt fallback to DB even on connection failure
+        last_log = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
+        if last_log:
+            iss_pos = {'latitude': last_log.lat, 'longitude': last_log.lon}
+    
+    return render_template('index.html', iss=iss_pos, count=astro_count)
 
-        button {
-            width: 100%;
-            padding: 12px;
-            background: var(--earth-blue);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: transform 0.2s, background 0.3s;
-        }
+@app.route('/save', methods=['POST'])
+def save():
+    # Capture inputs
+    lat_raw = request.form.get('lat')
+    lon_raw = request.form.get('lon')
+    note = request.form.get('note')
 
-        button:hover {
-            background: #1557b0;
-            transform: translateY(-2px);
-        }
+    # 7.3 Hidden Field Integrity: Verify coordinates are valid numbers
+    try:
+        float(lat_raw)
+        float(lon_raw)
+    except (ValueError, TypeError):
+        flash("Invalid coordinate data detected.")
+        return redirect('/')
 
-        .links {
-            margin-top: 20px;
-            display: block;
-            text-decoration: none;
-            color: #888;
-            font-size: 0.85rem;
-        }
+    # If valid, commit to database
+    new_log = Snapshot(
+        lat=lat_raw,
+        lon=lon_raw,
+        note=note
+    )
+    db.session.add(new_log)
+    db.session.commit()
+    flash("Snapshot saved successfully.")
+    return redirect('/logs')
 
-        .links:hover {
-            color: var(--accent-cyan);
-        }
+@app.route('/logs')
+def logs():
+    all_snapshots = Snapshot.query.order_by(Snapshot.timestamp.desc()).all()
+    return render_template('logs.html', logs=all_snapshots)
 
-        /* Pulsing dot indicator */
-        .live-indicator {
-            height: 8px;
-            width: 8px;
-            background-color: #ff4b2b;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 5px;
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(255, 75, 43, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(255, 75, 43, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 75, 43, 0); }
-        }
-    </style>
-</head>
-<body>
-
-    <div class="dashboard">
-        <div style="font-size: 0.7rem; margin-bottom: 5px;">
-            <span class="live-indicator"></span> LIVE TELEMETRY
-        </div>
-        <h1>ISS Tracker</h1>
-
-        <div class="telemetry">
-            <div class="coordinate-grid">
-                <div>LAT: {{ iss.latitude }}</div>
-                <div>LON: {{ iss.longitude }}</div>
-            </div>
-            <div class="human-count">
-                👨‍🚀 <strong>{{ count }}</strong> humans currently in orbit
-            </div>
-        </div>
-
-        <form action="/save" method="POST">
-            <input type="hidden" name="lat" value="{{ iss.latitude }}">
-            <input type="hidden" name="lon" value="{{ iss.longitude }}">
-            <input type="text" name="note" placeholder="Add mission log note..." required>
-            <button type="submit">Log Snapshot</button>
-        </form>
-
-        <a href="/logs" class="links">View Mission History →</a>
-    </div>
-
-</body>
-</html>
+if __name__ == '__main__':
+    app.run(debug=True)
